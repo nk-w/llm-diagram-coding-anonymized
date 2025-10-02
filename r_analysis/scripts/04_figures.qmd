@@ -1,0 +1,1025 @@
+---
+title: "Publication Figures from Saved BRMS Models"
+author: "Author"
+format:
+  html:
+    toc: true
+    number-sections: true
+execute:
+  echo: true
+  warning: false
+  message: false
+editor: visual
+---
+
+```{r}
+
+# Load packages
+pkgs <- c(
+  "tidyverse","data.table","janitor","here","readxl",
+  "brms","broom.mixed","posterior","ggplot2","stringr","tidyr","dplyr","readr"
+)
+to_install <- pkgs[!(pkgs %in% rownames(installed.packages()))]
+if (length(to_install) > 0) install.packages(to_install, dependencies = TRUE)
+invisible(lapply(pkgs, library, character.only = TRUE))
+
+theme_set(theme_bw(base_size = 12))
+
+# Helper to load brms model fits
+read_fit <- function(stem){
+  cand <- c(
+    here::here("models", paste0(stem, ".rds")),
+    here::here("models", stem)
+  )
+  cand <- cand[file.exists(cand)]
+  if (length(cand) == 0) stop("Model file not found: ", stem,
+                               ". Expected at models/", stem, "(.rds).", call. = FALSE)
+  readRDS(cand[[1]])
+}
+
+```
+
+## Load Data & Model Inputs
+
+```{r}
+
+# Load Data
+data_path <- here::here("data","data_brms_analysis.xlsx")
+
+data <- readxl::read_excel(data_path) |> janitor::clean_names()
+
+# Ensure variables are of correct type
+data <- data |>
+  dplyr::filter(model_used %in% c("gpt-5","gpt-5-mini")) |>
+  mutate(
+    student      = as.factor(student),
+    text_box_id  = as.factor(text_box_id),
+    model_used   = factor(model_used, levels = c("gpt-5-mini","gpt-5")),
+    model_provided = as.logical(model_provided),
+    model_created  = as.logical(model_created),
+    extraction_agreement   = as.logical(extraction_agreement),
+    positioncode_agreement = as.logical(positioncode_agreement),
+    examples      = as.integer(examples),
+    examples_f    = factor(examples, levels = c(0,5,25), labels = c("0","5","25"))
+  )
+
+# Load brms fittings
+fit_extraction <- read_fit("fit_extraction_cat")
+fit_position   <- read_fit("fit_position_cat")
+```
+
+## Re-build analysis datasets (like in 02_brms_analysis.qmd)
+
+```{r}
+
+# Extraction dataset
+dat_extraction <- data %>%
+  filter(!is.na(extraction_agreement)) %>%
+  select(student, text_box_id,
+         model_used, model_provided, model_created, examples, examples_f,
+         extraction_agreement)
+
+# Positioning dataset
+dat_position <- data %>%
+  filter(code == "g",
+         extraction_agreement == TRUE,
+         !is.na(positioncode_agreement)) %>%
+  select(student, text_box_id,
+         model_used, model_provided, model_created, examples, examples_f,
+         positioncode_agreement) %>%
+  droplevels()
+```
+
+## Derived quantities from fits
+
+```{r}
+
+# Fixed effects for idea extraction
+fixef_tab <- broom.mixed::tidy(fit_extraction, effects = "fixed", conf.int = TRUE, conf.level = 0.95) %>%
+  mutate(
+    OR   = exp(estimate),
+    OR_lo= exp(conf.low),
+    OR_hi= exp(conf.high)
+  ) %>%
+  select(term, estimate, std.error, conf.low, conf.high, OR, OR_lo, OR_hi)
+readr::write_csv(fixef_tab, here::here("tables","extraction_fixed_effects_OR.csv"))
+
+# Predicted probabilities for idea extraction
+valid_pairs <- tibble::tribble(
+  ~model_provided, ~model_created,
+  FALSE,           FALSE,
+  FALSE,           TRUE,
+  TRUE,            FALSE
+)
+new_extr <- tidyr::expand_grid(
+  model_used = levels(dat_extraction$model_used),
+  valid_pairs,
+  examples_f = levels(dat_extraction$examples_f)
+)
+
+pred_extr <- fitted(
+  fit_extraction,
+  newdata    = new_extr,
+  re_formula = NA,
+  summary    = TRUE
+) %>%
+  as_tibble() %>%
+  bind_cols(new_extr) %>%
+  rename(p = Estimate, p_lo = Q2.5, p_hi = Q97.5)
+
+baseline_extr <- pred_extr %>%
+  filter(model_provided == FALSE, model_created == FALSE, examples_f == "0") %>%
+  select(model_used, p_baseline = p)
+
+pred_extr <- pred_extr %>%
+  left_join(baseline_extr, by = "model_used") %>%
+  mutate(delta_pp = p - p_baseline) %>%
+  arrange(model_used, model_provided, model_created, examples_f)
+readr::write_csv(pred_extr, here::here("tables","extraction_predicted_probs.csv"))
+
+# Fixed effects for idea positioning
+fixef_pos <- broom.mixed::tidy(fit_position, effects = "fixed", conf.int = TRUE, conf.level = 0.95) %>%
+  mutate(
+    OR    = exp(estimate),
+    OR_lo = exp(conf.low),
+    OR_hi = exp(conf.high)
+  ) %>%
+  select(term, estimate, std.error, conf.low, conf.high, OR, OR_lo, OR_hi)
+readr::write_csv(fixef_pos, here::here("tables","position_fixed_effects_OR.csv"))
+
+# Predicted probabilities for idea positioning
+new_pos <- dat_position %>%
+  distinct(model_used, model_provided, model_created, examples_f)
+
+pred_pos <- fitted(
+  fit_position,
+  newdata    = new_pos,
+  re_formula = NA,
+  summary    = TRUE
+) %>%
+  as_tibble() %>%
+  bind_cols(new_pos) %>%
+  rename(p = Estimate, p_lo = Q2.5, p_hi = Q97.5)
+
+baseline_pos <- pred_pos %>%
+  filter(model_provided == FALSE, model_created == FALSE, examples_f == "0") %>%
+  select(model_used, p_baseline = p)
+
+pred_pos <- pred_pos %>%
+  left_join(baseline_pos, by = "model_used") %>%
+  mutate(delta_pp = p - p_baseline) %>%
+  arrange(model_used, model_provided, model_created, examples_f)
+readr::write_csv(pred_pos, here::here("tables","position_predicted_probs.csv"))
+```
+
+## Create facets for heatmaps
+
+```{r}
+
+cond_order <- c(
+  "Provided = No, Created = No",
+  "Provided = No, Created = Yes",
+  "Provided = Yes, Created = No"
+)
+
+mk_condition <- function(prov, creat) {
+  dplyr::case_when(
+    !prov & !creat ~ "Provided = No, Created = No",
+    !prov &  creat ~ "Provided = No, Created = Yes",
+     prov & !creat ~ "Provided = Yes, Created = No",
+    TRUE ~ NA_character_
+  )
+}
+```
+
+## Heatmaps for predicted probability
+
+```{r}
+
+# Set color
+r2g    <- c("#f7f7f7", "#cccccc", "#969696", "#525252")
+orange <- "#000000" 
+
+# Determine when text turns white in heat maps (for better readability)
+TEXT_WHITE_THRESHOLD <- 0.85
+
+# Idea extraction
+## Setup data
+plot_extr <- pred_extr %>%
+  mutate(
+    condition = mk_condition(model_provided, model_created),
+    condition = factor(condition, levels = cond_order),
+    examples_f = factor(examples_f, levels = c("0","5","25")),
+    model_used = factor(model_used, levels = c("gpt-5-mini","gpt-5")),
+    lab_col    = if_else(p >= TEXT_WHITE_THRESHOLD, "white", "black")
+  )
+limits_extr <- range(plot_extr$p, na.rm = TRUE)
+
+## Create plot (horizontal)
+p_extr <- ggplot(plot_extr, aes(x = examples_f, y = condition, fill = p)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_tile(
+    data = subset(plot_extr, model_provided == FALSE & model_created == FALSE & examples_f == "0"),
+    color = orange, linewidth = 1.2, fill = NA
+  ) +
+  geom_text(aes(label = sprintf("%.3f", p), colour = lab_col),
+            size = 3.3, fontface = "bold", vjust = 0.0, show.legend = FALSE) +
+  geom_text(aes(label = sprintf("Δ %.1fpp", 100*delta_pp), colour = lab_col),
+            size = 3.1, vjust = 1.3, show.legend = FALSE) +
+  scale_colour_identity() +
+  scale_fill_gradientn(
+    colours = r2g,
+    limits  = limits_extr,
+    name    = "Predicted\nprobability"
+  ) +
+  facet_wrap(~ model_used, nrow = 1) +
+  labs(x = "Examples given", y = NULL) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    plot.subtitle = element_blank(),
+    legend.position = "right"
+  )
+
+ggsave(filename = here::here("figures","heatmap_extraction_pred.png"),
+       plot = p_extr, width = 10.5, height = 4.2, dpi = 600)
+ggsave(filename = here::here("figures","heatmap_extraction_pred.pdf"),
+       plot = p_extr, width = 10.5, height = 4.2, device = "pdf")
+
+## Create plot (vertical)
+p_extr_v <- ggplot(plot_extr, aes(x = examples_f, y = condition, fill = p)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_tile(
+    data = subset(plot_extr, model_provided == FALSE & model_created == FALSE & examples_f == "0"),
+    color = orange, linewidth = 1.2, fill = NA
+  ) +
+  geom_text(aes(label = sprintf("%.3f", p), colour = lab_col),
+            size = 3.3, fontface = "bold", vjust = 0.0, show.legend = FALSE) +
+  geom_text(aes(label = sprintf("Δ %.1fpp", 100*delta_pp), colour = lab_col),
+            size = 3.1, vjust = 1.3, show.legend = FALSE) +
+  scale_colour_identity() +
+  scale_fill_gradientn(
+    colours = r2g,
+    limits  = limits_extr,
+    name    = "Predicted\nprobability"
+  ) +
+  facet_wrap(~ model_used, ncol = 1) +
+  labs(x = "Examples given", y = NULL) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    plot.subtitle = element_blank(),
+    legend.position = "right"
+  )
+
+ggsave(filename = here::here("figures","heatmap_extraction_pred_vertical.png"),
+       plot = p_extr_v, width = 7.8, height = 8.6, dpi = 600)
+ggsave(filename = here::here("figures","heatmap_extraction_pred_vertical.pdf"),
+       plot = p_extr_v, width = 7.8, height = 8.6, device = "pdf")
+
+# Idea Positioning
+plot_pos <- pred_pos %>%
+  mutate(
+    condition  = mk_condition(model_provided, model_created),
+    condition  = factor(condition, levels = cond_order),
+    examples_f = factor(examples_f, levels = c("0","5","25")),
+    model_used = factor(model_used, levels = c("gpt-5-mini","gpt-5")),
+    lab_col    = if_else(p >= TEXT_WHITE_THRESHOLD, "white", "black")
+  )
+limits_pos <- range(plot_pos$p, na.rm = TRUE)
+
+## Create plot (horizontal)
+p_pos <- ggplot(plot_pos, aes(x = examples_f, y = condition, fill = p)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_tile(
+    data = subset(plot_pos, model_provided == FALSE & model_created == FALSE & examples_f == "0"),
+    color = orange, linewidth = 1.2, fill = NA
+  ) +
+  geom_text(aes(label = sprintf("%.3f", p), colour = lab_col),
+            size = 3.3, fontface = "bold", vjust = 0.0, show.legend = FALSE) +
+  geom_text(aes(label = sprintf("Δ %.1fpp", 100*delta_pp), colour = lab_col),
+            size = 3.1, vjust = 1.3, show.legend = FALSE) +
+  scale_colour_identity() +
+  scale_fill_gradientn(
+    colours = r2g,
+    limits  = limits_pos,
+    name    = "Predicted\nprobability"
+  ) +
+  facet_wrap(~ model_used, nrow = 1) +
+  labs(x = "Examples given", y = NULL) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    plot.subtitle = element_blank(),
+    legend.position = "right"
+  )
+
+ggsave(filename = here::here("figures","heatmap_position_pred.png"),
+       plot = p_pos, width = 10.5, height = 4.2, dpi = 600)
+ggsave(filename = here::here("figures","heatmap_position_pred.pdf"),
+       plot = p_pos, width = 10.5, height = 4.2, device = "pdf")
+
+## Create plot (vertical)
+p_pos_v <- ggplot(plot_pos, aes(x = examples_f, y = condition, fill = p)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_tile(
+    data = subset(plot_pos, model_provided == FALSE & model_created == FALSE & examples_f == "0"),
+    color = orange, linewidth = 1.2, fill = NA
+  ) +
+  geom_text(aes(label = sprintf("%.3f", p), colour = lab_col),
+            size = 3.3, fontface = "bold", vjust = 0.0, show.legend = FALSE) +
+  geom_text(aes(label = sprintf("Δ %.1fpp", 100*delta_pp), colour = lab_col),
+            size = 3.1, vjust = 1.3, show.legend = FALSE) +
+  scale_colour_identity() +
+  scale_fill_gradientn(
+    colours = r2g,
+    limits  = limits_pos,
+    name    = "Predicted\nprobability"
+  ) +
+  facet_wrap(~ model_used, ncol = 1) +
+  labs(x = "Examples given", y = NULL) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    plot.subtitle = element_blank(),
+    legend.position = "right"
+  )
+
+ggsave(filename = here::here("figures","heatmap_position_pred_vertical.png"),
+       plot = p_pos_v, width = 7.8, height = 8.6, dpi = 600)
+ggsave(filename = here::here("figures","heatmap_position_pred_vertical.pdf"),
+       plot = p_pos_v, width = 7.8, height = 8.6, device = "pdf")
+
+
+p_extr_v; p_pos_v
+
+```
+
+## Heatmaps for kappa
+
+```{r}
+
+# Set colors
+
+r2g    <- c("#f7f7f7", "#cccccc", "#969696", "#525252")
+orange <- "#000000"
+
+# Counts for extraction
+extr_counts <- data %>%
+  filter(!is.na(extraction_conmat)) %>%
+  mutate(extraction_conmat = factor(extraction_conmat, levels = c("TP","FP","FN","TN"))) %>%
+  count(model_used, model_provided, model_created, examples_f, extraction_conmat, name = "n") %>%
+  tidyr::pivot_wider(names_from = extraction_conmat, values_from = n, values_fill = 0) %>%
+  ensure_conf_cols()
+
+# Counts for positioning
+pos_counts <- data %>%
+  filter(code == "g", extraction_agreement == TRUE, !is.na(positioncode_conmat)) %>%
+  mutate(positioncode_conmat = factor(positioncode_conmat, levels = c("TP","FP","FN","TN"))) %>%
+  count(model_used, model_provided, model_created, examples_f, positioncode_conmat, name = "n") %>%
+  tidyr::pivot_wider(names_from = positioncode_conmat, values_from = n, values_fill = 0) %>%
+  ensure_conf_cols()
+
+# Calculate kappa
+compute_kappa_tbl <- function(df) {
+  df %>%
+    mutate(
+      n   = TP + FP + FN + TN,
+      po  = (TP + TN) / n,
+      py1 = (TP + FN) / n,
+      py2 = (TP + FP) / n,
+      pe  = py1 * py2 + (1 - py1) * (1 - py2),
+      kappa = dplyr::if_else(n == 0 | abs(1 - pe) < 1e-12, NA_real_, (po - pe) / (1 - pe))
+    ) %>%
+    mutate(
+      condition  = mk_condition(model_provided, model_created),
+      condition  = factor(condition, levels = cond_order),
+      model_used = factor(model_used, levels = c("gpt-5-mini","gpt-5")),
+      examples_f = factor(examples_f, levels = c("0","5","25"))
+    )
+}
+
+extr_kappa <- compute_kappa_tbl(extr_counts)
+pos_kappa  <- compute_kappa_tbl(pos_counts)
+
+# Baselines & difference scores
+extr_baseline <- extr_kappa %>%
+  filter(model_provided == FALSE, model_created == FALSE, examples_f == "0") %>%
+  select(model_used, kappa_baseline = kappa)
+extr_kappa <- extr_kappa %>%
+  left_join(extr_baseline, by = "model_used") %>%
+  mutate(delta_kappa = kappa - kappa_baseline)
+
+pos_baseline <- pos_kappa %>%
+  filter(model_provided == FALSE, model_created == FALSE, examples_f == "0") %>%
+  select(model_used, kappa_baseline = kappa)
+pos_kappa <- pos_kappa %>%
+  left_join(pos_baseline, by = "model_used") %>%
+  mutate(delta_kappa = kappa - kappa_baseline)
+
+# Create Plots
+limits_extr_k <- range(extr_kappa$kappa, na.rm = TRUE)
+p_extr_k <- ggplot(extr_kappa, aes(x = examples_f, y = condition, fill = kappa)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_tile(
+    data = subset(extr_kappa, model_provided == FALSE & model_created == FALSE & examples_f == "0"),
+    color = orange, linewidth = 1.2, fill = NA
+  ) +
+  geom_text(aes(label = sprintf("%.3f", kappa)), size = 3.3, fontface = "bold", color = "black", vjust = 0.0) +
+  geom_text(aes(label = sprintf("Δκ %.2f", delta_kappa)), size = 3.1, color = "gray25", vjust = 1.3) +
+  scale_fill_gradientn(colours = r2g, limits = limits_extr_k, name = "Cohen's κ") +
+  facet_wrap(~ model_used, nrow = 1) +
+  labs(
+    title    = "Idea Extraction — Cohen’s κ by Strategy Factors",
+    subtitle = "Rows = Provided/Created; Columns = Examples (0/5/25); Orange outline = S1 (No/No/0)",
+    x = "Examples given", y = NULL
+  ) +
+  theme_bw(base_size = 12) +
+  theme(panel.grid.minor = element_blank(), strip.text = element_text(face = "bold"),
+        plot.title = element_text(face = "bold"), legend.position = "right")
+
+limits_pos_k <- range(pos_kappa$kappa, na.rm = TRUE)
+p_pos_k <- ggplot(pos_kappa, aes(x = examples_f, y = condition, fill = kappa)) +
+  geom_tile(color = "white", linewidth = 0.5) +
+  geom_tile(
+    data = subset(pos_kappa, model_provided == FALSE & model_created == FALSE & examples_f == "0"),
+    color = orange, linewidth = 1.2, fill = NA
+  ) +
+  geom_text(aes(label = sprintf("%.3f", kappa)), size = 3.3, fontface = "bold", color = "black", vjust = 0.0) +
+  geom_text(aes(label = sprintf("Δκ %.2f", delta_kappa)), size = 3.1, color = "gray25", vjust = 1.3) +
+  scale_fill_gradientn(colours = r2g, limits = limits_pos_k, name = "Cohen's κ") +
+  facet_wrap(~ model_used, nrow = 1) +
+  labs(
+    title    = "Idea Positioning — Cohen’s κ by Strategy Factors",
+    subtitle = "Rows = Provided/Created; Columns = Examples (0/5/25); Orange outline = S1 (No/No/0)",
+    x = "Examples given", y = NULL
+  ) +
+  theme_bw(base_size = 12) +
+  theme(panel.grid.minor = element_blank(), strip.text = element_text(face = "bold"),
+        plot.title = element_text(face = "bold"), legend.position = "right")
+
+ggsave(here::here("figures","heatmap_extraction_kappa.png"),
+       p_extr_k, width = 10.5, height = 4.2, dpi = 600)
+ggsave(here::here("figures","heatmap_extraction_kappa.pdf"),
+       p_extr_k, width = 10.5, height = 4.2, device = "pdf")
+
+ggsave(here::here("figures","heatmap_position_kappa.png"),
+       p_pos_k,  width = 10.5, height = 4.2, dpi = 600)
+ggsave(here::here("figures","heatmap_position_kappa.pdf"),
+       p_pos_k,  width = 10.5, height = 4.2, device = "pdf")
+```
+
+## Main-effect forrest plots
+
+```{r}
+
+# Set color
+orange <- "#000000"
+col_map <- c(
+  "Provided" = "#000000",  
+  "Examples" = "#4d4d4d",  
+  "Model"    = "#7f7f7f",  
+  "Created"  = "#bdbdbd"   
+)
+
+# Prepare data for plots
+tidy_main <- function(fit, task_label){
+  broom.mixed::tidy(fit, effects = "fixed", conf.int = TRUE, conf.level = 0.95) %>%
+    dplyr::filter(!str_detect(term, ":"), term != "(Intercept)") %>%
+    mutate(
+      OR    = exp(estimate),
+      OR_lo = exp(conf.low),
+      OR_hi = exp(conf.high),
+      group = case_when(
+        str_starts(term, "model_provided") ~ "Provided",
+        str_starts(term, "examples_f")     ~ "Examples",
+        str_starts(term, "model_used")     ~ "Model",
+        str_starts(term, "model_created")  ~ "Created",
+        TRUE ~ "Other"
+      ),
+      label = case_when(
+        term == "model_providedTRUE" ~ "Gold standard provided (Yes vs No)",
+        term == "model_createdTRUE"  ~ "Model created (Yes vs No)",
+        term == "examples_f5"        ~ "Examples: 5 vs 0",
+        term == "examples_f25"       ~ "Examples: 25 vs 0",
+        str_starts(term, "model_used") ~ "Model: gpt-5 vs gpt-5-mini",
+        TRUE ~ term
+      ),
+      task = task_label
+    )
+}
+
+main_extr <- tidy_main(fit_extraction, "Idea Extraction")
+main_pos  <- tidy_main(fit_position,   "Idea Positioning")
+
+readr::write_csv(main_extr, here::here("tables","main_effects_extraction_OR.csv"))
+readr::write_csv(main_pos,  here::here("tables","main_effects_position_OR.csv"))
+
+# Create plots
+
+plot_forest <- function(df, file_out){
+  df <- df %>%
+    arrange(desc(OR)) %>%
+    mutate(label = factor(label, levels = unique(label)))
+  
+  p <- ggplot(df, aes(x = OR, y = label, colour = group)) +
+    geom_vline(xintercept = 1, linetype = "dashed", linewidth = 0.5, colour = "#bfbfbf") +
+    geom_errorbarh(aes(xmin = OR_lo, xmax = OR_hi), height = 0.18, linewidth = 1.1) +
+    geom_point(size = 3, stroke = 0) +
+    scale_colour_manual(values = col_map, guide = guide_legend(title = NULL)) +
+    scale_x_log10(
+      breaks = c(0.5, 0.75, 1, 1.5, 2, 3, 5, 10, 20),
+      labels = c("0.5","0.75","1","1.5","2","3","5","10","20")
+    ) +
+    labs(
+      title = unique(df$task),
+      subtitle = "Odds ratios (log scale); vertical line = no effect (OR = 1)",
+      x = "Odds ratio (log scale)",
+      y = NULL
+    ) +
+    theme_bw(base_size = 12) +
+    theme(
+      panel.grid.minor = element_blank(),
+      panel.grid.major.y = element_blank(),
+      legend.position = "bottom",
+      plot.title = element_blank(),
+      axis.text.y = element_text(size = 11)
+    )
+
+  ggsave(filename = here::here("figures", file_out), plot = p, width = 8.5, height = 4.8, dpi = 600)
+  ggsave(filename = here::here("figures", sub("\\.png$", ".pdf", file_out)), plot = p, width = 8.5, height = 4.8, device = "pdf")
+  p
+}
+
+p_main_extr <- plot_forest(main_extr, "forest_main_effects_extraction.png")
+p_main_pos  <- plot_forest(main_pos,  "forest_main_effects_position.png")
+
+p_main_extr; p_main_pos
+
+```
+
+## Interaction plots
+
+```{r}
+
+# Set color
+orange <- "#000000"
+col_prov <- c("FALSE" = "#000000", "TRUE" = "#7f7f7f")
+col_crea <- c("FALSE" = "#000000", "TRUE" = "#7f7f7f")
+
+# Get predicted probabilities
+
+get_preds <- function(fit, grid) {
+  as_tibble(fitted(
+    fit,
+    newdata    = grid,
+    re_formula = NA,
+    summary    = TRUE
+  )) %>%
+    bind_cols(grid) %>%
+    rename(p = Estimate, p_lo = Q2.5, p_hi = Q97.5)
+}
+
+# Provided × Examples - Extraction
+grid_extr_prov <- tidyr::expand_grid(
+  model_used     = levels(dat_extraction$model_used),
+  model_provided = c(FALSE, TRUE),
+  examples_f     = c("0", "5", "25")
+) %>%
+  mutate(
+    model_created = FALSE,
+    examples_f    = factor(examples_f, levels = c("0", "5", "25"))
+  )
+
+pred_extr_prov <- get_preds(fit_extraction, grid_extr_prov)
+
+## Create plot (horizontal)
+p_extr_prov <- ggplot(
+  pred_extr_prov,
+  aes(x = examples_f, y = p,
+      colour = as.character(model_provided),
+      linetype = as.character(model_provided),
+      shape = as.character(model_provided),
+      group = model_provided)
+) +
+  geom_ribbon(aes(ymin = p_lo, ymax = p_hi, fill = as.character(model_provided)),
+              alpha = 0.15, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_colour_manual(values = col_prov, name = "Gold standard provided") +
+  scale_fill_manual(values   = col_prov, guide = "none") +
+  scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                        name = "Gold standard provided") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 17),
+                     name = "Gold standard provided") +
+  facet_wrap(~ model_used, nrow = 1) +
+  labs(
+    title = "Idea Extraction — Interaction: Provided × Examples",
+    subtitle = "Created fixed at FALSE; y = predicted probability (with 95% CrI)",
+    x = "Examples (0 / 5 / 25)", y = "Predicted probability"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+ggsave(here::here("figures","interaction_extraction_provided_examples.png"),
+       p_extr_prov, width = 10, height = 4.2, dpi = 600)
+ggsave(here::here("figures","interaction_extraction_provided_examples.pdf"),
+       p_extr_prov, width = 10, height = 4.2, device = "pdf")
+
+## Create plot (vertical)
+p_extr_prov_v <- ggplot(
+  pred_extr_prov,
+  aes(x = examples_f, y = p,
+      colour = as.character(model_provided),
+      linetype = as.character(model_provided),
+      shape = as.character(model_provided),
+      group = model_provided)
+) +
+  geom_ribbon(aes(ymin = p_lo, ymax = p_hi, fill = as.character(model_provided)),
+              alpha = 0.15, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_colour_manual(values = col_prov, name = "Gold standard provided") +
+  scale_fill_manual(values   = col_prov, guide = "none") +
+  scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                        name = "Gold standard provided") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 17),
+                     name = "Gold standard provided") +
+  facet_wrap(~ model_used, ncol = 1) +
+  labs(
+    title = "Idea Extraction — Interaction: Provided × Examples",
+    subtitle = "Created fixed at FALSE; y = predicted probability (with 95% CrI)",
+    x = "Examples (0 / 5 / 25)", y = "Predicted probability"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+ggsave(here::here("figures","interaction_extraction_provided_examples_vertical.png"),
+       p_extr_prov_v, width = 7.8, height = 8.6, dpi = 600)
+ggsave(here::here("figures","interaction_extraction_provided_examples_vertical.pdf"),
+       p_extr_prov_v, width = 7.8, height = 8.6, device = "pdf")
+
+# Provided × Examples — Positioning
+grid_pos_prov <- tidyr::expand_grid(
+  model_used     = levels(dat_position$model_used),
+  model_provided = c(FALSE, TRUE),
+  examples_f     = c("0", "5", "25")
+) %>%
+  mutate(
+    model_created = FALSE,
+    examples_f    = factor(examples_f, levels = c("0", "5", "25"))
+  )
+
+pred_pos_prov <- get_preds(fit_position, grid_pos_prov)
+
+## Create plot (horizontal)
+p_pos_prov <- ggplot(
+  pred_pos_prov,
+  aes(x = examples_f, y = p,
+      colour = as.character(model_provided),
+      linetype = as.character(model_provided),
+      shape = as.character(model_provided),
+      group = model_provided)
+) +
+  geom_ribbon(aes(ymin = p_lo, ymax = p_hi, fill = as.character(model_provided)),
+              alpha = 0.15, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_colour_manual(values = col_prov, name = "Gold standard provided") +
+  scale_fill_manual(values   = col_prov, guide = "none") +
+  scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                        name = "Gold standard provided") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 17),
+                     name = "Gold standard provided") +
+  facet_wrap(~ model_used, nrow = 1) +
+  labs(
+    title = "Idea Positioning — Interaction: Provided × Examples",
+    subtitle = "Created fixed at FALSE; y = predicted probability (with 95% CrI)",
+    x = "Examples (0 / 5 / 25)", y = "Predicted probability"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+ggsave(here::here("figures","interaction_position_provided_examples.png"),
+       p_pos_prov, width = 10, height = 4.2, dpi = 600)
+ggsave(here::here("figures","interaction_position_provided_examples.pdf"),
+       p_pos_prov, width = 10, height = 4.2, device = "pdf")
+
+## Create plot (vertical)
+p_pos_prov_v <- ggplot(
+  pred_pos_prov,
+  aes(x = examples_f, y = p,
+      colour = as.character(model_provided),
+      linetype = as.character(model_provided),
+      shape = as.character(model_provided),
+      group = model_provided)
+) +
+  geom_ribbon(aes(ymin = p_lo, ymax = p_hi, fill = as.character(model_provided)),
+              alpha = 0.15, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_colour_manual(values = col_prov, name = "Gold standard provided") +
+  scale_fill_manual(values   = col_prov, guide = "none") +
+  scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                        name = "Gold standard provided") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 17),
+                     name = "Gold standard provided") +
+  facet_wrap(~ model_used, ncol = 1) +
+  labs(
+    title = "Idea Positioning — Interaction: Provided × Examples",
+    subtitle = "Created fixed at FALSE; y = predicted probability (with 95% CrI)",
+    x = "Examples (0 / 5 / 25)", y = "Predicted probability"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+ggsave(here::here("figures","interaction_position_provided_examples_vertical.png"),
+       p_pos_prov_v, width = 7.8, height = 8.6, dpi = 600)
+ggsave(here::here("figures","interaction_position_provided_examples_vertical.pdf"),
+       p_pos_prov_v, width = 7.8, height = 8.6, device = "pdf")
+
+# Created × Examples — Extraction
+grid_extr_crea <- tidyr::expand_grid(
+  model_used     = levels(dat_extraction$model_used),
+  model_created  = c(FALSE, TRUE),
+  examples_f     = c("0", "5", "25")
+) %>%
+  mutate(
+    model_provided = FALSE,
+    examples_f     = factor(examples_f, levels = c("0", "5", "25"))
+  )
+
+pred_extr_crea <- get_preds(fit_extraction, grid_extr_crea)
+
+## Create plot (horizontal)
+p_extr_crea <- ggplot(
+  pred_extr_crea,
+  aes(x = examples_f, y = p,
+      colour = as.character(model_created),
+      linetype = as.character(model_created),
+      shape = as.character(model_created),
+      group = model_created)
+) +
+  geom_ribbon(aes(ymin = p_lo, ymax = p_hi, fill = as.character(model_created)),
+              alpha = 0.15, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_colour_manual(values = col_crea, name = "Model created") +
+  scale_fill_manual(values   = col_crea, guide = "none") +
+  scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                        name = "Model created") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 17),
+                     name = "Model created") +
+  facet_wrap(~ model_used, nrow = 1) +
+  labs(
+    title = "Idea Extraction — Interaction: Created × Examples",
+    subtitle = "Provided fixed at FALSE; y = predicted probability (with 95% CrI)",
+    x = "Examples (0 / 5 / 25)", y = "Predicted probability"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+ggsave(here::here("figures","interaction_extraction_created_examples.png"),
+       p_extr_crea, width = 10, height = 4.2, dpi = 600)
+ggsave(here::here("figures","interaction_extraction_created_examples.pdf"),
+       p_extr_crea, width = 10, height = 4.2, device = "pdf")
+
+## Create plot (vertical)
+p_extr_crea_v <- ggplot(
+  pred_extr_crea,
+  aes(x = examples_f, y = p,
+      colour = as.character(model_created),
+      linetype = as.character(model_created),
+      shape = as.character(model_created),
+      group = model_created)
+) +
+  geom_ribbon(aes(ymin = p_lo, ymax = p_hi, fill = as.character(model_created)),
+              alpha = 0.15, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_colour_manual(values = col_crea, name = "Model created") +
+  scale_fill_manual(values   = col_crea, guide = "none") +
+  scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                        name = "Model created") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 17),
+                     name = "Model created") +
+  facet_wrap(~ model_used, ncol = 1) +
+  labs(
+    title = "Idea Extraction — Interaction: Created × Examples",
+    subtitle = "Provided fixed at FALSE; y = predicted probability (with 95% CrI)",
+    x = "Examples (0 / 5 / 25)", y = "Predicted probability"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+ggsave(here::here("figures","interaction_extraction_created_examples_vertical.png"),
+       p_extr_crea_v, width = 7.8, height = 8.6, dpi = 600)
+ggsave(here::here("figures","interaction_extraction_created_examples_vertical.pdf"),
+       p_extr_crea_v, width = 7.8, height = 8.6, device = "pdf")
+
+# Created × Examples — Positioning 
+grid_pos_crea <- tidyr::expand_grid(
+  model_used     = levels(dat_position$model_used),
+  model_created  = c(FALSE, TRUE),
+  examples_f     = c("0", "5", "25")
+) %>%
+  mutate(
+    model_provided = FALSE,
+    examples_f     = factor(examples_f, levels = c("0", "5", "25"))
+  )
+
+pred_pos_crea <- get_preds(fit_position, grid_pos_crea)
+
+## Create plot (horizontal)
+p_pos_crea <- ggplot(
+  pred_pos_crea,
+  aes(x = examples_f, y = p,
+      colour = as.character(model_created),
+      linetype = as.character(model_created),
+      shape = as.character(model_created),
+      group = model_created)
+) +
+  geom_ribbon(aes(ymin = p_lo, ymax = p_hi, fill = as.character(model_created)),
+              alpha = 0.15, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_colour_manual(values = col_crea, name = "Model created") +
+  scale_fill_manual(values   = col_crea, guide = "none") +
+  scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                        name = "Model created") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 17),
+                     name = "Model created") +
+  facet_wrap(~ model_used, nrow = 1) +
+  labs(
+    title = "Idea Positioning — Interaction: Created × Examples",
+    subtitle = "Provided fixed at FALSE; y = predicted probability (with 95% CrI)",
+    x = "Examples (0 / 5 / 25)", y = "Predicted probability"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+ggsave(here::here("figures","interaction_position_created_examples.png"),
+       p_pos_crea, width = 10, height = 4.2, dpi = 600)
+ggsave(here::here("figures","interaction_position_created_examples.pdf"),
+       p_pos_crea, width = 10, height = 4.2, device = "pdf")
+
+## Create plot (vertical)
+p_pos_crea_v <- ggplot(
+  pred_pos_crea,
+  aes(x = examples_f, y = p,
+      colour = as.character(model_created),
+      linetype = as.character(model_created),
+      shape = as.character(model_created),
+      group = model_created)
+) +
+  geom_ribbon(aes(ymin = p_lo, ymax = p_hi, fill = as.character(model_created)),
+              alpha = 0.15, colour = NA, show.legend = FALSE) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2.5) +
+  scale_colour_manual(values = col_crea, name = "Model created") +
+  scale_fill_manual(values   = col_crea, guide = "none") +
+  scale_linetype_manual(values = c("FALSE" = "solid", "TRUE" = "dashed"),
+                        name = "Model created") +
+  scale_shape_manual(values = c("FALSE" = 16, "TRUE" = 17),
+                     name = "Model created") +
+  facet_wrap(~ model_used, ncol = 1) +
+  labs(
+    title = "Idea Positioning — Interaction: Created × Examples",
+    subtitle = "Provided fixed at FALSE; y = predicted probability (with 95% CrI)",
+    x = "Examples (0 / 5 / 25)", y = "Predicted probability"
+  ) +
+  theme_bw(base_size = 12) +
+  theme(
+    panel.grid.minor = element_blank(),
+    strip.text = element_text(face = "bold"),
+    plot.title = element_blank(),
+    legend.position = "bottom"
+  )
+
+ggsave(here::here("figures","interaction_position_created_examples_vertical.png"),
+       p_pos_crea_v, width = 7.8, height = 8.6, dpi = 600)
+ggsave(here::here("figures","interaction_position_created_examples_vertical.pdf"),
+       p_pos_crea_v, width = 7.8, height = 8.6, device = "pdf")
+
+
+p_extr_prov_v; p_pos_prov_v; p_extr_crea_v; p_pos_crea_v
+
+
+```
+
+## Random-intercept density plots
+
+```{r}
+
+# Prepare data for plot
+tidy_re <- function(fit, grp, task_label){
+  broom.mixed::tidy(fit, effects = "ran_vals", conf.int = TRUE, conf.level = 0.95) %>%
+    filter(group == grp, term == "(Intercept)") %>%
+    transmute(
+      level,
+      re_mean = estimate,
+      re_lo   = conf.low,
+      re_hi   = conf.high,
+      group   = grp,
+      task    = task_label
+    )
+}
+
+re_extr_student <- tidy_re(fit_extraction, "student",     "Idea Extraction")
+re_extr_item    <- tidy_re(fit_extraction, "text_box_id", "Idea Extraction")
+re_pos_student  <- tidy_re(fit_position,   "student",     "Idea Positioning")
+re_pos_item     <- tidy_re(fit_position,   "text_box_id", "Idea Positioning")
+
+dens_students <- bind_rows(re_extr_student, re_pos_student)
+dens_items    <- bind_rows(re_extr_item,    re_pos_item)
+
+# Set color
+col_task <- c("Idea Extraction" = "#7f7f7f",
+              "Idea Positioning" = "#2b2b2b")
+
+# Build plots
+## Students
+p_dens_students <- ggplot(dens_students, aes(x = re_mean, fill = task, colour = task)) +
+  geom_density(alpha = 0.20, adjust = 1.0) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "#bfbfbf") +
+  scale_fill_manual(values = col_task) +
+  scale_colour_manual(values = col_task) +
+  labs(
+    title = "Random intercepts — Students",
+    subtitle = "Posterior means of per-student random intercepts (log-odds)",
+    x = "Random intercept (log-odds)", y = "Density", fill = NULL, colour = NULL
+  ) +
+  theme_bw(base_size = 12) +
+  theme(panel.grid.minor = element_blank(),
+        plot.title = element_blank())
+
+ggsave(here::here("figures","density_random_intercepts_students.png"),
+       p_dens_students, width = 8.0, height = 4.6, dpi = 600)
+ggsave(here::here("figures","density_random_intercepts_students.pdf"),
+       p_dens_students, width = 8.0, height = 4.6, device = "pdf")
+
+## Box-Text Item
+p_dens_items <- ggplot(dens_items, aes(x = re_mean, fill = task, colour = task)) +
+  geom_density(alpha = 0.20, adjust = 1.0) +
+  geom_vline(xintercept = 0, linetype = "dashed", colour = "#bfbfbf") +
+  scale_fill_manual(values = col_task) +
+  scale_colour_manual(values = col_task) +
+  labs(
+    title = "Random intercepts — Items (Text × Box)",
+    subtitle = "Posterior means of per-item random intercepts (log-odds)",
+    x = "Random intercept (log-odds)", y = "Density", fill = NULL, colour = NULL
+  ) +
+  theme_bw(base_size = 12) +
+  theme(panel.grid.minor = element_blank(),
+        plot.title = element_blank())
+
+ggsave(here::here("figures","density_random_intercepts_items.png"),
+       p_dens_items, width = 8.0, height = 4.6, dpi = 600)
+ggsave(here::here("figures","density_random_intercepts_items.pdf"),
+       p_dens_items, width = 8.0, height = 4.6, device = "pdf")
+
+p_dens_students; p_dens_items
+```

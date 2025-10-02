@@ -1,0 +1,152 @@
+---
+title: "03_descriptives"
+author: "Author"
+format: html
+editor: visual
+---
+
+## Getting Descriptives Table of Observed Scores Per Strategy & Task
+
+```{r}
+library(tidyverse)
+library(janitor)
+library(readxl)
+library(here)
+
+# Set data path
+path_xlsx <- here("data","combined_Data_with_strategy_and_model.xlsx")
+
+# Read data & clean names
+dat <- read_excel(path_xlsx) %>% clean_names()
+
+# Setting up conmat columns for easier referecne 
+ex_col <- "extraction_con_mat"
+pos_col <- "position_code_con_mat"
+
+# Ensure right data structure
+dat <- dat %>%
+  mutate(
+    strategy             = as.integer(strategy),
+    model_used           = as.factor(model_used),
+    code                 = tolower(code),
+    extraction_agreement = as.integer(extraction_agreement)
+  )
+
+dat[[ex_col]] <- tolower(dat[[ex_col]])
+if (!is.na(pos_col)) dat[[pos_col]] <- tolower(dat[[pos_col]])
+
+# Set up a matrix for the strategies
+strategy_map <- tribble(
+  ~strategy, ~model_provided, ~model_created, ~examples,
+  1L, FALSE, FALSE,  0L,
+  2L, FALSE, FALSE,  5L,
+  3L, FALSE, FALSE, 25L,
+  4L, TRUE,  FALSE,  0L,
+  5L, TRUE,  FALSE,  5L,
+  6L, TRUE,  FALSE, 25L,
+  7L, FALSE, TRUE,   0L,
+  8L, FALSE, TRUE,   5L,
+  9L, FALSE, TRUE,  25L
+)
+
+# Function to specify metrics
+metrics_from_counts <- function(tp, tn, fp, fn) {
+  n    <- tp + tn + fp + fn
+  acc  <- ifelse(n > 0, (tp + tn) / n, NA_real_)
+  prec <- ifelse((tp + fp) > 0, tp / (tp + fp), NA_real_)
+  rec  <- ifelse((tp + fn) > 0, tp / (tp + fn), NA_real_)
+  f1   <- ifelse(!is.na(prec) & !is.na(rec) & (prec + rec) > 0, 2 * prec * rec / (prec + rec), NA_real_)
+  if (n > 0) {
+    p0    <- (tp + tn) / n
+    p_yes <- ((tp + fp)/n) * ((tp + fn)/n)
+    p_no  <- ((tn + fn)/n) * ((tn + fp)/n)
+    pe    <- p_yes + p_no
+    kap   <- ifelse((1 - pe) > 0, (p0 - pe) / (1 - pe), NA_real_)
+  } else {
+    kap   <- NA_real_
+  }
+  tibble(accuracy = acc, precision = prec, recall = rec, f1 = f1, kappa = kap)
+}
+
+# Get idea extraction metrics
+extract_by_grp <- dat %>%
+  group_by(strategy, model_used) %>%
+  summarise(
+    tp = sum(.data[[ex_col]] == "tp", na.rm = TRUE),
+    tn = sum(.data[[ex_col]] == "tn", na.rm = TRUE),
+    fp = sum(.data[[ex_col]] == "fp", na.rm = TRUE),
+    fn = sum(.data[[ex_col]] == "fn", na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  rowwise() %>%
+  mutate(metrics_from_counts(tp, tn, fp, fn)) %>%
+  ungroup() %>%
+  mutate(task = "Idea Extraction")
+
+# Get idea positioning metrics
+if (!is.na(pos_col)) {
+  position_source <- dat %>%
+    filter(code == "g", extraction_agreement == 1)
+
+  position_by_grp <- position_source %>%
+    group_by(strategy, model_used) %>%
+    summarise(
+      tp = sum(.data[[pos_col]] == "tp", na.rm = TRUE),
+      tn = sum(.data[[pos_col]] == "tn", na.rm = TRUE),
+      fp = sum(.data[[pos_col]] == "fp", na.rm = TRUE),
+      fn = sum(.data[[pos_col]] == "fn", na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    rowwise() %>%
+    mutate(metrics_from_counts(tp, tn, fp, fn)) %>%
+    ungroup() %>%
+    mutate(task = "Idea Positioning")
+} else {
+  position_by_grp <- tibble()
+}
+
+# Setup table
+table_r1 <- bind_rows(extract_by_grp, position_by_grp) %>%
+  left_join(strategy_map, by = "strategy") %>%
+  select(task, strategy, model_used, model_provided, model_created, examples,
+         f1, kappa, accuracy, precision, recall) %>%
+  arrange(task, model_used, desc(kappa), desc(f1))
+
+# Create + save table
+dir.create(here("tables"), showWarnings = FALSE, recursive = TRUE)
+out_csv <- here("tables","table_R1_observed_metrics_from_combined_data.csv")
+readr::write_csv(table_r1, out_csv)
+message("Saved: ", out_csv)
+print(table_r1, n = 30)
+
+# Setup descriptives
+summaries <- table_r1 %>%
+  group_by(task) %>%
+  summarise(
+    n_strategies = n(),
+    f1_min  = min(f1, na.rm=TRUE),
+    f1_med  = median(f1, na.rm=TRUE),
+    f1_max  = max(f1, na.rm=TRUE),
+    kap_min = min(kappa, na.rm=TRUE),
+    kap_med = median(kappa, na.rm=TRUE),
+    kap_max = max(kappa, na.rm=TRUE),
+    .groups = "drop"
+  )
+cat("\nDescriptive summaries:\n")
+print(summaries, n = Inf)
+
+# Getting best strategies for each task
+best_by_task <- table_r1 %>%
+  group_by(task) %>%
+  arrange(desc(kappa), desc(f1), .by_group = TRUE) %>%
+  slice_head(n = 1) %>%
+  ungroup() %>%
+  mutate(
+    spec = paste0("Provided=", model_provided,
+                  ", Created=", model_created,
+                  ", Examples=", examples)
+  ) %>%
+  select(task, strategy, model_used, spec, f1, kappa)
+cat("\nBest strategy (based on κ)\n")
+print(best_by_task, n = Inf)
+```

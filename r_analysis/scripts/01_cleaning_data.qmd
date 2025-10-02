@@ -1,0 +1,306 @@
+---
+title: "01_cleaning_data"
+author: "Author"
+format: html
+editor: visual
+---
+
+## Loading Data
+
+```{r}
+library(here)
+library(readxl)
+library(tidyverse)
+
+path_xlsx <- here::here("data", "combined_Data_with_strategy_and_model.xlsx")
+stopifnot(file.exists(path_xlsx))  
+
+data <- readxl::read_excel(path_xlsx)
+```
+
+## Getting Ready for Analysis
+
+```{r}
+data_cleaned <- data %>% 
+  select(-c(Dataset, Veld, Verbandnummer, `Source File`))
+```
+
+Checking whether all UUID match the same patterns so they can be split up into unique variables:
+
+```{r}
+pattern <- "^[^_]+_[^_]+_[^_]+$"
+
+# Check if all match
+all_valid <- all(grepl(pattern, data_cleaned$UUID))
+
+all_valid
+```
+
+Splitting up UUID into Student, Class, and Text:
+
+```{r}
+pattern <- "^[^_]+_[^_]+_[^_]+$"
+
+# Check the pattern
+if (!all(grepl(pattern, data_cleaned$UUID))) {
+  invalid_entries <- data_cleaned$UUID[!grepl(pattern, data_cleaned$UUID)]
+  stop("Some UUID entries do not match the expected pattern:\n",
+       paste(invalid_entries, collapse = "\n"))
+}
+
+# Split into new columns
+split_matrix <- do.call(
+  rbind,
+  strsplit(data_cleaned$UUID, "_", fixed = TRUE)
+)
+
+colnames(split_matrix) <- c("student", "class", "text")
+
+data_cleaned <- cbind(data_cleaned, split_matrix)
+```
+
+```{r}
+# Checking numbers and actual values
+students <- unique(data_cleaned$student)
+classes <- unique(data_cleaned$class)
+texts <- unique(data_cleaned$text)
+
+length(students)
+length(classes)
+length(texts)
+
+students
+classes
+texts
+```
+
+### Calculating Additional Variables
+
+#### text_box_id
+
+```{r}
+data_cleaned <- data_cleaned %>% 
+  mutate(
+    text_box_id = paste0(text, Veldnummer)
+  )
+```
+
+Checking that all text boxes are in the dataset
+
+```{r}
+text_boxes <- data_cleaned %>% 
+  select(text_box_id) %>% 
+  distinct(text_box_id) %>% 
+  arrange(text_box_id)
+
+print(text_boxes)
+```
+
+All text boxes present!
+
+#### Strategy Factors (Model Given, Model Created, Examples Given)
+
+```{r}
+data_cleaned <- data_cleaned %>%
+  mutate(
+    model_provided = case_when(
+      Strategy %in% c(4, 5, 6) ~ TRUE,
+      TRUE ~ FALSE
+    ),
+    model_created = case_when(
+      Strategy %in% c(7, 8, 9) ~ TRUE,
+      TRUE ~ FALSE
+    ),
+    examples = case_when(
+      Strategy %in% c(1, 4, 7) ~ 0L,
+      Strategy %in% c(2, 5, 8) ~ 5L,
+      Strategy %in% c(3, 6, 9) ~ 25L
+    )
+  )
+```
+
+### Checking whether all relevant variables have logical values
+
+```{r}
+print("Code:")
+unique(data_cleaned$Code)
+
+print("LLM Code:")
+unique(data_cleaned$LLM_Code)
+
+print("Extraction Agreement:")
+unique(data_cleaned$`Extraction Agreement`)
+
+print("Extraction ConMat:")
+unique(data_cleaned$`Extraction ConMat`)
+
+print("Veldnummer:")
+unique(data_cleaned$Veldnummer)
+
+print("PositionCode:")
+unique(data_cleaned$PositionCode)
+
+print("LLM_PositionCode:")
+unique(data_cleaned$LLM_PositionCode)
+
+print("LLM_CorrectPosition:")
+unique(data_cleaned$LLM_CorrectPosition)
+
+print("PositionCode Agreement:")
+unique(data_cleaned$`PositionCode Agreement`)
+
+print("PositionCode ConMat:")
+unique(data_cleaned$`PositionCode ConMat`)
+
+print("Position Agreement:")
+unique(data_cleaned$`Position Agreement`)
+
+print("Strategy:")
+unique(data_cleaned$Strategy)
+
+print("Model Used:")
+unique(data_cleaned$`Model Used`)
+
+print("model_provided:")
+unique(data_cleaned$model_provided)
+
+print("model_created:")
+unique(data_cleaned$model_created)
+
+print("examples:")
+unique(data_cleaned$examples)
+```
+
+Variables to check:
+
+-   Extraction Agreement
+
+-   Extraction ConMat
+
+-   LLM_CorrectPosition
+
+-   PositionCode Agreement
+
+-   PositionCode ConMat
+
+#### Extraction Agreement
+
+```{r}
+data_cleaned %>% 
+  filter(is.na(`Extraction Agreement`))
+```
+
+Only boxes that were not filled out by the student =\> Can be ignored and taken out of the df:
+
+```{r}
+data_cleaned <- data_cleaned %>% 
+  filter(!is.na(`Extraction Agreement`))
+```
+
+#### Extraction ConMat
+
+```{r}
+data_cleaned %>% 
+  filter(is.na(`Extraction ConMat`))
+```
+
+#### LLM_CorrectPosition
+
+```{r}
+data_cleaned %>% 
+  filter(is.na(LLM_CorrectPosition))
+```
+
+Code above indicates some odd values for this variable:
+
+```         
+2.3  1.3 23.0  1.2
+```
+
+Checking for those below:
+
+```{r}
+data_cleaned %>% 
+  filter(LLM_CorrectPosition %in% c(2.3 , 1.3, 23.0, 1.2))
+
+```
+
+This seems to be a mistake by the LLM =\> Throwing Out
+
+```{r}
+data_cleaned <- data_cleaned %>% 
+  filter(!(LLM_CorrectPosition %in% c(2.3 , 1.3, 23.0, 1.2)))
+```
+
+#### Position Code Agreement
+
+This variable is only assessed if Code == "g" & Extraction Agreement == 1. it should therefore not be missing if this is the case
+
+```{r}
+data_cleaned %>% 
+  filter(Code == "g" & `Extraction Agreement` == 1 & is.na(`PositionCode Agreement`))
+```
+
+#### PositionCode ConMat
+
+Same as above
+
+```{r}
+data_cleaned %>% 
+  filter(Code == "g" & `Extraction Agreement` == 1 & is.na(`PositionCode ConMat`))
+```
+
+## Creating Datafile for Analysis
+
+```{r}
+# Setup anaysis df
+data_analysis <- data_cleaned %>% 
+  select(Strategy,`Model Used`, student, class, text, Veldnummer, text_box_id, model_provided, model_created, examples, Code, LLM_Code, `Extraction Agreement`, `Extraction ConMat`, PositionCode, LLM_PositionCode, LLM_CorrectPosition, `PositionCode Agreement`, `PositionCode ConMat`, `PositionCode Agreement`)
+
+# ENsure right variable type
+data_analysis <- data_analysis %>%
+  mutate(
+    across(
+      c(
+        Strategy,
+        `Model Used`,
+        student,
+        class,
+        text,
+        Veldnummer,
+        text_box_id,
+        Code,
+        LLM_Code,
+        `Extraction ConMat`,
+        PositionCode,
+        LLM_PositionCode,
+        LLM_CorrectPosition,
+        `PositionCode ConMat`
+      ),
+      as.factor
+    ),
+    `Extraction Agreement`   = as.logical(`Extraction Agreement`),
+    `PositionCode Agreement` = as.logical(`PositionCode Agreement`)
+  ) %>% 
+  rename(
+    strategy = Strategy, 
+    model_used = `Model Used`,
+    field_number = Veldnummer,
+    extraction_agreement = `Extraction Agreement`,
+    extraction_conmat = `Extraction ConMat`,
+    positioncode_agreement = `PositionCode Agreement`,
+    positioncode_conmat = `PositionCode ConMat`
+  )
+
+```
+
+```{r}
+library(writexl)
+
+# Write analysis df to file
+
+out_dir  <- here::here("data")
+out_file <- file.path(out_dir, "data_brms_analysis.xlsx")
+
+writexl::write_xlsx(data_analysis, path = out_file)
+```

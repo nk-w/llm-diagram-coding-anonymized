@@ -1,0 +1,434 @@
+---
+title: "02_brms_analysis"
+author: "Author"
+format: html
+editor: visual
+---
+
+## Step 1: Load & check data
+
+```{r}
+# Install needed packagesif missing
+pkgs <- c("tidyverse","data.table","janitor","here","readxl",
+          "brms","cmdstanr","loo","bayesplot","posterior",
+          "emmeans","broom.mixed","performance")
+to_install <- pkgs[!(pkgs %in% rownames(installed.packages()))]
+if (length(to_install) > 0) install.packages(to_install, dependencies = TRUE)
+invisible(lapply(pkgs, library, character.only = TRUE))
+
+# Load dataset
+path <- here::here("data","data_brms_analysis.xlsx")
+stopifnot(file.exists(path))
+data <- readxl::read_excel(path) |> janitor::clean_names()
+
+# Assert required columns exist
+required_cols <- c(
+  "strategy","model_used","student","text_box_id",
+  "model_provided","model_created","examples",
+  "extraction_agreement","positioncode_agreement","code"
+)
+missing <- setdiff(required_cols, names(data))
+if (length(missing) > 0) stop("Missing required columns: ", paste(missing, collapse=", "))
+
+# Checking if everything is right
+## LLM models
+models_present <- data |> dplyr::distinct(model_used) |> dplyr::arrange(model_used)
+print(models_present)
+
+## Strategy structure
+pairs_present <- data |> dplyr::distinct(model_provided, model_created) |> dplyr::arrange(model_provided, model_created)
+print(pairs_present)
+
+## Examples values
+examples_present <- data |> dplyr::distinct(examples) |> dplyr::arrange(examples)
+print(examples_present)
+
+## Outcomes non-missing counts
+outcome_nas <- data |> 
+  summarise(
+    n = n(),
+    na_extraction = sum(is.na(extraction_agreement)),
+    na_position   = sum(is.na(positioncode_agreement))
+  )
+print(outcome_nas)
+
+# Getting Row Counts
+n_total <- nrow(data)
+n_extraction <- sum(!is.na(data$extraction_agreement))
+n_positionable <- data |>
+  filter(code == "g", extraction_agreement == TRUE) |>
+  summarise(n = n()) |> pull(n)
+cat("\nRow counts:\n",
+    "Total rows:", n_total, "\n",
+    "Rows with extraction_agreement not NA:", n_extraction, "\n",
+    "Rows eligible for Positioning model (code=='g' & extraction_agreement==TRUE):", n_positionable, "\n")
+```
+
+## Step 1.5: Clean data and ensure correct variable types
+
+```{r}
+# Filtering for GPT-5 models
+data <- data |>
+  dplyr::filter(model_used %in% c("gpt-5","gpt-5-mini"))
+
+# Make sure variable are correct type + levels
+data <- data |>
+  mutate(
+    student      = as.factor(student),
+    text_box_id  = as.factor(text_box_id),
+    model_used   = factor(model_used, levels = c("gpt-5-mini","gpt-5")),
+    model_provided = as.logical(model_provided),
+    model_created  = as.logical(model_created),
+    extraction_agreement   = as.logical(extraction_agreement),
+    positioncode_agreement = as.logical(positioncode_agreement),
+    examples      = as.integer(examples),
+    examples_f    = factor(examples, levels = c(0,5,25))
+  )
+
+# Checking edge cases
+pairs_present <- data |>
+  dplyr::distinct(model_provided, model_created) |>
+  dplyr::arrange(model_provided, model_created)
+print(pairs_present)
+
+# Checking whether all 18 conditions to be tested are present
+coverage <- data |>
+  dplyr::group_by(model_used, model_provided, model_created, examples_f) |>
+  dplyr::summarise(n = dplyr::n(), .groups = "drop") |>
+  dplyr::arrange(model_used, model_provided, model_created, examples_f)
+print(coverage)
+
+```
+
+## Step 2: Build analysis datasets
+
+### 2.1 Create datasets
+
+```{r}
+# Create extraction dataset
+dat_extraction <- data %>%
+  filter(!is.na(extraction_agreement)) %>%
+  select(student, text_box_id,
+         model_used, model_provided, model_created, examples, examples_f,
+         extraction_agreement)
+
+# Create positioning dataset (only focusing on correctly extracted idea units)
+dat_position <- data %>%
+  filter(code == "g",
+         extraction_agreement == TRUE,
+         !is.na(positioncode_agreement)) %>%
+  select(student, text_box_id,
+         model_used, model_provided, model_created, examples, examples_f,
+         positioncode_agreement)
+
+
+```
+
+### 2.2 Checking
+
+```{r}
+# Counts and NA checks
+glimpse(dat_extraction)
+glimpse(dat_position)
+
+dat_extraction %>% summarise(
+  n = n(),
+  na_outcome = sum(is.na(extraction_agreement))
+) %>% print()
+
+dat_position %>% summarise(
+  n = n(),
+  na_outcome = sum(is.na(positioncode_agreement))
+) %>% print()
+
+# Re-checking whether all 18 factorial combinations are present across datasets
+cov_extraction <- dat_extraction %>%
+  count(model_used, model_provided, model_created, examples_f, name = "n") %>%
+  arrange(model_used, model_provided, model_created, examples_f)
+
+cov_position <- dat_position %>%
+  count(model_used, model_provided, model_created, examples_f, name = "n") %>%
+  arrange(model_used, model_provided, model_created, examples_f)
+
+cov_extraction %>% print(n = 50)
+cov_position   %>% print(n = 50)
+
+# CHecking balance of datasets (TRUE/FALSE outcomes)
+tab_extraction <- dat_extraction %>%
+  count(extraction_agreement, name = "n") %>%
+  mutate(p = n / sum(n))
+
+tab_position <- dat_position %>%
+  count(positioncode_agreement, name = "n") %>%
+  mutate(p = n / sum(n))
+
+tab_extraction
+tab_position
+
+```
+
+### 2.3 Checking Whether Levels are Correct
+
+```{r}
+# Extraction
+levels_ex <- list(
+  model_used   = levels(dat_extraction$model_used),
+  examples_f   = levels(dat_extraction$examples_f)
+)
+
+# Positioning
+levels_pos <- list(
+  model_used   = levels(dat_position$model_used),
+  examples_f   = levels(dat_position$examples_f)
+)
+
+levels_ex
+levels_pos
+
+```
+
+## Step 3: Fitting Idea Extraction Model
+
+### 3.1 Fitting Test Model
+
+```{r}
+library(brms)
+options(mc.cores = parallel::detectCores())
+
+# Setting up model
+bf_extraction <- bf(
+  extraction_agreement ~ model_used +
+    model_provided * examples_f +
+    model_created  * examples_f +
+    (1 | student) + (1 | text_box_id),
+  family = bernoulli()
+)
+
+# Defining priors
+priors <- c(
+  set_prior("normal(0, 1.5)", class = "b"),
+  set_prior("student_t(3, 0, 2.5)", class = "sd"),
+  set_prior("student_t(3, 0, 2.5)", class = "Intercept")
+)
+
+# Fitting test model
+set.seed(20250814)
+fit_extraction_smoke <- brm(
+  formula  = bf_extraction,
+  data     = dat_extraction %>% sample_frac(0.05, replace = FALSE),
+  prior    = priors,
+  backend  = "cmdstanr",
+  chains   = 2,
+  iter     = 1000, warmup = 500,
+  threads  = threading( min(4, parallel::detectCores() - 1) ),
+  control  = list(adapt_delta = 0.9, max_treedepth = 10),
+  inits    = 0,
+  refresh  = 50,                 
+  file     = here::here("models", "fit_extraction_smoke")
+)
+summary(fit_extraction_smoke)
+pp_check(fit_extraction_smoke, type = "bars", nsamples = 100)
+
+
+
+```
+
+### 3.2. Fitting Full Extraction Model
+
+```{r}
+options(mc.cores = parallel::detectCores())
+
+# Fit full model
+fit_extraction <- brm(
+  formula  = bf_extraction,
+  data     = dat_extraction,
+  prior    = priors,
+  backend  = "cmdstanr",
+  chains   = 2,                      
+  iter     = 2000, warmup = 1000,
+  threads  = threading( min(6, parallel::detectCores() - 1) ),
+  control  = list(adapt_delta = 0.99, max_treedepth = 12),
+  init     = 0,
+  refresh  = 50,
+  file     = here::here("models", "fit_extraction_cat")
+)
+
+summary(fit_extraction)
+pp_check(fit_extraction, type = "bars", ndraws = 200)
+
+```
+
+### 3.3 Extracting Odds Ratios & Predicted Probabilities
+
+```{r}
+library(broom.mixed)
+
+# Getting fixed effects summary
+fixef_tab <- broom.mixed::tidy(fit_extraction, effects = "fixed", conf.int = TRUE, conf.level = 0.95) %>%
+  mutate(
+    OR   = exp(estimate),
+    OR_lo= exp(conf.low),
+    OR_hi= exp(conf.high)
+  ) %>%
+  select(term, estimate, std.error, conf.low, conf.high, OR, OR_lo, OR_hi)
+
+readr::write_csv(fixef_tab, here::here("tables","extraction_fixed_effects_OR.csv"))
+fixef_tab %>% print(n = 50)
+
+# Define factor combinations
+
+valid_pairs <- tibble::tribble(
+  ~model_provided, ~model_created,
+  FALSE,           FALSE,
+  FALSE,           TRUE,
+  TRUE,            FALSE
+)
+
+new_extr <- tidyr::expand_grid(
+  model_used = levels(dat_extraction$model_used),
+  valid_pairs,
+  examples_f = levels(dat_extraction$examples_f)
+)
+
+# Get predicted probabilities for each factor combination
+
+pred_extr <- fitted(
+  fit_extraction,
+  newdata    = new_extr,
+  re_formula = NA,     
+  summary    = TRUE
+) %>%
+  as_tibble() %>%
+  bind_cols(new_extr) %>%
+  rename(p = Estimate, p_lo = Q2.5, p_hi = Q97.5)
+
+# Get baseline performance and changes from baseline
+
+baseline_extr <- pred_extr %>%
+  filter(model_provided == FALSE, model_created == FALSE, examples_f == "0") %>%
+  select(model_used, p_baseline = p)
+
+pred_extr <- pred_extr %>%
+  left_join(baseline_extr, by = "model_used") %>%
+  mutate(delta_pp = p - p_baseline) %>%
+  arrange(model_used, model_provided, model_created, examples_f)
+
+readr::write_csv(pred_extr, here::here("tables","extraction_predicted_probs.csv"))
+pred_extr %>% print(n = 50)
+
+```
+
+## Step 4: Fitting Idea Positioning
+
+### 4.1 Double Checking Variables
+
+```{r}
+dat_position <- dat_position %>% droplevels()
+
+# Checking presence of all 18 combinations
+cov_position <- dat_position %>%
+  count(model_used, model_provided, model_created, examples_f, name = "n") %>%
+  arrange(model_used, model_provided, model_created, examples_f)
+
+print(cov_position, n = 100)
+
+# Balance check
+tab_position <- dat_position %>%
+  count(positioncode_agreement, name = "n") %>%
+  mutate(p = n / sum(n))
+tab_position
+
+```
+
+### 4.2 Fitting Full Positioning Model
+
+```{r}
+options(mc.cores = parallel::detectCores())
+
+# Setting up model
+
+bf_position <- bf(
+  positioncode_agreement ~ model_used +
+    model_provided * examples_f +
+    model_created  * examples_f +
+    (1 | student) + (1 | text_box_id),
+  family = bernoulli()
+)
+
+# Defining Priors
+
+priors <- c(
+  set_prior("normal(0, 1.5)", class = "b"),
+  set_prior("student_t(3, 0, 2.5)", class = "sd"),
+  set_prior("student_t(3, 0, 2.5)", class = "Intercept")
+)
+
+# Fitting full model
+
+set.seed(20250814)
+fit_position <- brm(
+  formula  = bf_position,
+  data     = dat_position,
+  prior    = priors,
+  backend  = "cmdstanr",
+  chains   = 2,
+  iter     = 2000, warmup = 1000,
+  threads  = threading( min(6, parallel::detectCores() - 1) ),
+  control  = list(adapt_delta = 0.99, max_treedepth = 12),
+  init     = 0,
+  refresh  = 50,
+  file     = here::here("models", "fit_position_cat")
+)
+
+summary(fit_position)
+pp_check(fit_position, type = "bars", ndraws = 200)
+
+```
+
+### 4.3 Extracting ORs and Predicted Probabilities
+
+```{r}
+
+# Getting fixed effects summary
+
+fixef_pos <- broom.mixed::tidy(fit_position, effects = "fixed", conf.int = TRUE, conf.level = 0.95) %>%
+  mutate(
+    OR    = exp(estimate),
+    OR_lo = exp(conf.low),
+    OR_hi = exp(conf.high)
+  ) %>%
+  select(term, estimate, std.error, conf.low, conf.high, OR, OR_lo, OR_hi)
+
+readr::write_csv(fixef_pos, here::here("tables","position_fixed_effects_OR.csv"))
+fixef_pos %>% print(n = 50)
+
+# # Get predicted probabilities for each factor combination
+
+new_pos <- dat_position %>%
+  distinct(model_used, model_provided, model_created, examples_f)
+
+pred_pos <- fitted(
+  fit_position,
+  newdata    = new_pos,
+  re_formula = NA,
+  summary    = TRUE
+) %>%
+  as_tibble() %>%
+  bind_cols(new_pos) %>%
+  rename(p = Estimate, p_lo = Q2.5, p_hi = Q97.5)
+
+# Get baseline performance and changes from baseline
+
+baseline_pos <- pred_pos %>%
+  filter(model_provided == FALSE, model_created == FALSE, examples_f == "0") %>%
+  select(model_used, p_baseline = p)
+
+pred_pos <- pred_pos %>%
+  left_join(baseline_pos, by = "model_used") %>%
+  mutate(delta_pp = p - p_baseline) %>%
+  arrange(model_used, model_provided, model_created, examples_f)
+
+readr::write_csv(pred_pos, here::here("tables","position_predicted_probs.csv"))
+pred_pos %>% print(n = 60)
+
+```

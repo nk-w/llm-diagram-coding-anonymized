@@ -1,0 +1,119 @@
+{
+    "type": "json_schema",
+    "json_schema": {
+        "name": "response_schema",
+        "description": "captures correctness of student responses",
+        "strict": true,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "Correct Diagram": {
+                    "type": "object",
+                    "description": "Your interpretation of what the correctly filled out diagram should look like based on the provided original text",
+                    "properties": {
+                        "Box_1": {
+                            "type": "string",
+                            "description": "The content that should be filled into Box 1 based on the provided original text"
+                        },
+                        "Box_2": {
+                            "type": "string",
+                            "description": "The content that should be filled into Box 1 based on the provided original text"
+                        },
+                        "Box_3": {
+                            "type": "string",
+                            "description": "The content that should be filled into Box 1 based on the provided original text"
+                        },
+                        "Box_4": {
+                            "type": "string",
+                            "description": "The content that should be filled into Box 1 based on the provided original text"
+                        }
+                    },
+                    "additionalProperties": false,
+                    "required": ["Box_1", "Box_2", "Box_3", "Box_4"]
+                },
+                "Box_1": {
+                    "type": "object",
+                    "description": "evaluation of student responses provided in Box_1 of the user input",
+                    "properties": {
+                        "Extraction": {
+                            "type": "string",
+                            "description": "The Extraction property captures whether the idea unite extracted into box_1 was extracted correctly from the text (without reference to whether it was extracted into the correct box. Correct = g; Incorrect = c; if box is empty = o"
+                        },
+                        "Position":{
+                            "type": "number",
+                            "description": "The Position property captures whether an correctly extracted idea unit (Extraction = Correct = g) was placed in the correct box of the logic diagram. if position in overall diagram is correct = 1; if position is incorrect = 0; if Extraction was Incorrect = 2; if box is empty = 9"
+                        },
+                        "Correct Position": {
+                            "type": "number",
+                            "description": "The Correct Position property captures in which box the idea unit should have been placed. If position is correct simply provide the number of the box in which the idea unit was placed. If the box is empty = 9"
+                        } 
+                    },
+                    "additionalProperties": false,
+                    "required": ["Extraction", "Position", "Correct Position"]
+                },
+                "Box_2": {
+                    "type": "object",
+                    "description": "evaluation of student responses provided in Box_2 of the user input",
+                    "properties": {
+                        "Extraction": {
+                            "type": "string",
+                            "description": "Same as Extraction for Box_1 but for the student response in Box_2"
+                        },
+                        "Position":{
+                            "type": "number",
+                            "description": "Same as Position for Box_1 but for the student response in Box_2"
+                        },
+                        "Correct Position": {
+                            "type": "number",
+                            "description": "Same as Correct Position for Box_1 but for the student response in Box_2"
+                        } 
+                    },
+                    "additionalProperties": false,
+                    "required": ["Extraction", "Position", "Correct Position"]
+                },
+                "Box_3": {
+                    "type": "object",
+                    "description": "evaluation of student responses provided in Box_3 of the user input",
+                    "properties": {
+                        "Extraction": {
+                            "type": "string",
+                            "description": "Same as Extraction for Box_1 but for the student response in Box_3"
+                        },
+                        "Position":{
+                            "type": "number",
+                            "description": "Same as Position for Box_1 but for the student response in Box_3"
+                        },
+                        "Correct Position": {
+                            "type": "number",
+                            "description": "Same as Correct Position for Box_1 but for the student response in Box_3"
+                        } 
+                    },
+                    "additionalProperties": false,
+                    "required": ["Extraction", "Position", "Correct Position"]
+                },
+                "Box_4": {
+                    "type": "object",
+                    "description": "evaluation of student responses provided in Box_4 of the user input",
+                    "properties": {
+                        "Extraction": {
+                            "type": "string",
+                            "description": "Same as Extraction for Box_1 but for the student response in Box_4"
+                        },
+                        "Position":{
+                            "type": "number",
+                            "description": "Same as Position for Box_1 but for the student response in Box_4"
+                        },
+                        "Correct Position": {
+                            "type": "number",
+                            "description": "Same as Correct Position for Box_1 but for the student response in Box_4"
+                        } 
+                    },
+                    "additionalProperties": false,
+                    "required": ["Extraction", "Position", "Correct Position"]
+                }
+            },
+            "additionalProperties": false,
+            "required": ["Correct Diagram", "Box_1", "Box_2", "Box_3", "Box_4"]
+        }
+    }
+}

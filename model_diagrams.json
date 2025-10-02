@@ -1,0 +1,164 @@
+{
+    "Metro": {
+        "text": "Metrowagons tot zinken gebracht. Het grootste gedeelte van de oceaanbodem ligt rond de 3 tot 4 km diepte en heeft relatief weinig reliëf. Dit wordt de abyssale vlakte genoemd. Voor de oostkust van de Verenigde Staten zijn in de Atlantische Oceaan zevenhonderd uitgerangeerde, rode wagons van de New Yorkse metro tot zinken gebracht. De oude, rode metrowagons van de New Yorkse metro worden ook wel redbirds genoemd. Door deze wagons tot zinken te brengen hoeft het afval van de oude rode metrowagons niet meer op een andere manier verwerkt te worden. Tegelijkertijd is door het zinken van deze wagons een kunstmatig rif aangelegd. Sinds het afzinken van de eerste wagons in 2001 is door dit kunstmatige rif de hoeveelheid plankton en zeefauna vierhonderd maal zo groot. De zandige zeebodem voor de oostkust van de Verenigde Staten biedt normaal gesproken niet zo veel leefruimte voor zeedieren. Maar door deze toename van plankton en zeefauna worden nu veel makreel, baars en andere zeevissen aangetrokken.",
+        "Provided_Box": {
+            "Provided Text": "Rode metrowagens tot zinken gebracht",
+            "Affects": ["Box_1", "Box_2"]
+        },
+        "Box_1": {
+            "Truth": "Afval hoeft niet op andere manier verwerkt te worden",
+            "Affects": [],
+            "Student Response": ""
+        },
+        "Box_2": {
+            "Truth": "Kunstmatig rif aangelegd",
+            "Affects": ["Box_3"],
+            "Student Response": ""
+        },
+        "Box_3": {
+            "Truth": "Meer plankton en zeefauna",
+            "Affects": ["Box_4"],
+            "Student Response": ""
+        },
+        "Box_4": {
+            "Truth": "Meer vissen (zoals makreel baars zeevissen) aangetroken",
+            "Affects": [],
+            "Student Response": ""
+        }
+    },
+    "Botox": {
+        "text": "Gebruik van Botox. Botox is de afkorting van botulinetoxine, het is een gif dat door de bacterie Clostridium Botulinum wordt geproduceerd. Dit middel blokkeert het aanspansignaal tussen de zenuwen in de huid en de huidspieren. Sinds 1989 is dit middel toegestaan. Er is wel strenge controle in Nederland. In Amerika is er in 2004 een ongeluk geweest met de dosering van Botox, waaraan 28 mensen overleden. Vanwege het blokkeren van het aanspansignaal tussen de zenuwen en de huid werd het middel Botox oorspronkelijk vooral gebruikt tegen samentrekkende spieren, bijvoorbeeld bij patiënten die vaak hard met hun oogleden knipperen. Door het inspuiten van Botox in de spieren rond de ogen, worden de spieren verlamd en verdwijnen deze spiersamentrekkingen. Omdat Botox het aanspansignaal tussen de zenuwen en de huidspieren blokkeert, wordt dit middel in de plastische chirurgie ook gebruikt om rimpels naast de ogen en op het voorhoofd glad te strijken. Het effect van een behandeling houdt meestal tussen de 1 en 6 maanden aan. Door zo’n behandeling zien mensen er jonger uit. Maar omdat de rimpels tussen de ogen en op het voorhoofd verdwijnen, kan iemands gezichtsuitdrukking ook ongewenst veranderen.",
+        "Provided_Box": {
+            "Provided Text": "Botox blokkeert aanspansignaal tussen zenuwen en huid",
+            "Affects": ["Box_1", "Box_2"]
+        },
+        "Box_1": {
+            "Truth": "Kan helpen tegen verkrampte spieren",
+            "Affects": [],
+            "Student Response": ""
+        },
+        "Box_2": {
+            "Truth": "Kan helpen tegen rimpels tussen ogen en voorhoofd",
+            "Affects": ["Box_3", "Box_4"],
+            "Student Response": ""
+        },
+        "Box_3": {
+            "Truth": "Mensen zien er jonger uit",
+            "Affects": [],
+            "Student Response": ""
+        },
+        "Box_4": {
+            "Truth": "Gezichtsuitdrukking kan veranderen",
+            "Affects": [],
+            "Student Response": ""
+        }
+    },
+    "Muziek": {
+        "text": "Muziek maakt slimmer. Leren om een instrument te bespelen kan veel voordelen hebben. Dit komt omdat voor het lezen van bladmuziek en het spelen van noten men gebruik moet maken van verschillende gebieden in de hersenen. De hersenen verbinden muziek met geheugen in verschillende hersengebieden, zoals de amygdala en de hippocampus. Canadees onderzoek toonde aan dat als gevolg van het gebruik van deze verschillende hersengebieden, 12-jarige kinderen die muziek leerden spelen, hogere scores haalden op een IQ-test. Ook kan het gebruik van de hersenen tijdens het leren van muziek ruimtelijke vaardigheden verbeteren die nuttig zijn bij het oplossen van wiskundetaken zoals breuken. Daarnaast kan muziek helpen met het ophalen van herinneringen. Zo kan een oud liedje je herinneren aan iets dat lang geleden gebeurde. Ook kunnen bijvoorbeeld patiënten met de ziekte van Alzheimer door muziek geholpen worden om herinneringen op te halen. Dit werd aangetoond in onderzoek van de wetenschapper Polk. Hij testte een oude vrouw met Alzheimer, zij bleek alle muziek die zij vroeger geleerd had nog te herkennen.",
+        "Box_1": {
+            "Truth": "Muziek leren lezen en spelen",
+            "Affects": ["Box_2"],
+            "Student Response": ""
+        },
+        "Provided_Box": {
+            "Provided Text": "Gebruik verschillende hersengebieden",
+            "Affects": ["Box_2", "Box_3", "Box_4"]
+        },
+        "Box_2": {
+            "Truth": "Verbetering wiskunde vaardigheden",
+            "Affects": [],
+            "Student Response": ""
+        },
+        "Box_3": {
+            "Truth": "Kan helpen oude herinneringen tergug te halen",
+            "Affects": [],
+            "Student Response": ""
+        },
+        "Box_4": {
+            "Truth": "Hogere scores op IP test",
+            "Affects": [],
+            "Student Response": ""
+        }
+    },
+    "Beton": {
+        "text": "Renovatie van betonnen gebouwen. Beton is nog steeds een veelgebruikt bouwmateriaal, al bijna zeventig jaar worden veel grote gebouwen van betonnen materialen gemaakt. In Nederland moet beton sinds 1962 een KOMO-certificaat hebben, wat aangeeft dat het geschikt is voor constructie van gebouwen. Bij het bouwen van betonnen gebouwen is het belangrijk om rekening te houden met de gevolgen van het gebruik van centrale verwarming. Door het gebruik van centrale verwarming kan beton uitdrogen. Wanneer het beton uitdroogt zorgt dat voor betonkrimp, dat betekent dat betonnen gebouwen krimpen en dus kleiner worden dan ze oorspronkelijk waren. Doordat de gebouwen waarvan het beton uitdroogt kleiner worden, blijven de liften op een gegeven moment hangen. Daarom moet men dan vaak de liften kleiner maken en de liftschachten inkorten. In 1952 werd het Mazzo gebouw gemaakt van betonnen panelen. Door het effect van centrale verwarming is het Mazzo gebouw 12 cm gekrompen. De heer Nicolas, een liftmonteur, vertelt dat er uitgebreide renovatiewerkzaamheden nodig waren om de liften van het Mazzo gebouw aan te passen.",
+        "Box_1": {
+            "Truth": "Centrale verwarming",
+            "Affects": ["Box_2"],
+            "Student Response": ""
+        },
+        "Box_2": {
+            "Truth": "beton droogt uit",
+            "Affects": ["Box_3"],
+            "Student Response": ""
+        },
+        "Box_3": {
+            "Truth": "Gebouwen worden kleiner",
+            "Affects": ["Box_4"],
+            "Student Response": ""
+        },
+        "Box_4": {
+            "Truth": "Liften blijven hangen",
+            "Affects": ["Provided_Box"],
+            "Student Response": ""
+        },
+        "Provided_Box": {
+            "Provided Text": "In betonnen gebouwen is vaak liftenovatie nodig",
+            "Affects": []
+        }
+    },
+    "Suez": {
+        "text": "Het Suezkanaal. Het Suezkanaal, dat de Indische Oceaan en de Middellandse zee met elkaar verbindt, is van groot belang voor de wereldhandel. Er is van oorsprong geen natuurlijke waterverbinding tussen de Atlantische en de Indische oceaan. Tussen deze twee zeeën ligt een woestijn. Hierdoor moesten handelsschepen die van de havenstad Jeddah in Saoedi-Arabië naar Europa reisden, een lange tocht rond het hele Afrikaanse continent maken. Daarom werd besloten dat er een kortere waterweg nodig was die de twee oceanen met elkaar zou verbinden. Om deze reden werd het Suezkanaal gegraven, dat was ontworpen door de Oostenrijkse ingenieur Alois Negrelli. Jarenlang waren arbeiders bezig om dit kanaal te graven en uiteindelijk werd het kanaal in 1869 geopend voor de scheepvaart. Door het graven van het Suezkanaal is de afstand van de havenstad Jeddah naar de havenstad Rotterdam met 40% verkort. Via het Suezkanaal is de afstand tussen deze twee steden 6337 zeemijl, als men rond het Afrikaanse continent vaart is deze afstand 10.743 mijl.",
+        "Box_1": {
+            "Truth": "Geen natuurlijke verbinding Atlantische-Indische Ocean",
+            "Affects": ["Box_2"],
+            "Student Response": ""
+        },
+        "Box_2": {
+            "Truth": "Schepen maken lange reis rond Afrikaans continent",
+            "Affects": ["Box_3"],
+            "Student Response": ""
+        },
+        "Box_3": {
+            "Truth": "Kortere waterweg nodig",
+            "Affects": ["Box_4"],
+            "Student Response": ""
+        },
+        "Box_4": {
+            "Truth": "Suez kanaal gegraven",
+            "Affects": ["Provided_Box"],
+            "Student Response": ""
+        },
+        "Provided_Box": {
+            "Provided Text": "Afstand Jeddah-Rotterdam verkort",
+            "Affects": []
+        }
+    },
+    "Geld": {
+        "text": "Geld maakt niet gelukkig. Volgens wetenschappers hangt ons geluk en welbevinden hoofdzakelijk af van het gevoel bij onze familie en de maatschappij te horen, en niet van onze economische welvaart. Psycholoog Melanie Greenberg heeft zich bezig gehouden met de levensloop van vroegere lottomiljonairs. Volgens haar is het een goede uitvinding van de natuur dat mensen niet te lang van mogelijke gevaren afgeleid worden en dat ze zich op noodzakelijke behoeften richten. Omdat mensen niet te lang afgeleid moeten worden van mogelijk gevaar, kan men daarom slechts kort een groot gevoel van geluk of ongeluk ervaren. Daarom went een mens ook snel aan luxe, zoals geld en alcohol. Hierdoor maakt geld mensen niet voor een lange tijd gelukkig. Wanneer een mens veel geld krijgt, heeft hij door de snelle gewenning hieraan steeds meer nodig om geluk en tevredenheid te kunnen voelen. Om deze redenen zijn loterijwinnaars, die toch aanzienlijk meer bezitten dan alle anderen, vaak helemaal niet gelukkig. Zo was bijvoorbeeld Jack Whittaker, een Amerikaan die in 2002 de Powerball loterij won en hierdoor 314,9 miljoen dollar kreeg, ondanks zijn rijkdom niet gelukkig.",
+        "Box_1": {
+            "Truth": "Mensen moeten niet te lang afgeleid worden van gevaar",
+            "Affects": ["Box_2"],
+            "Student Response": ""
+        },
+        "Box_2": {
+            "Truth": "Iemand kan slechts kort diep geluk of ongeluk ervaren",
+            "Affects": ["Box_3"],
+            "Student Response": ""
+        },
+        "Box_3": {
+            "Truth": "Mensen wennen snel aan luxe",
+            "Affects": ["Box_4"],
+            "Student Response": ""
+        },
+        "Box_4": {
+            "Truth": "Geld maakt niet gellukig voor lange tijd",
+            "Affects": ["Provided_Box"],
+            "Student Response": ""
+        },
+        "Provided_Box": {
+            "Provided Text": "Lottowinnaars zijn vaak niet gelukkig",
+            "Affects": []
+        }
+    }
+}

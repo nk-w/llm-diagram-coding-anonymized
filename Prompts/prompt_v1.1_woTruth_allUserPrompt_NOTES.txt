@@ -1,0 +1,5 @@
+# Notes
+- Step 1 Extraction: Even when (parts of) an idea are mentioned in two separate boxes, both should still be coded as correctly extracted. 
+- Be strict in your evaluation. 
+- Step 1 Extraction: Only mark idea units as extracted correctly (step 1) if they are necessary to fill out the logic diagram correctly based on the text.
+- Step 1 Extraction: Even when an idea unit that is necessary to fill out the logic diagram correctly is placed in the wrong box it was still extracted correctly.

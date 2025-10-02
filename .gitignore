@@ -1,0 +1,27 @@
+/LLM_Diagram_Coding - Published.code-workspace
+/main_gpt.py
+/Data/*
+!/Data/.gitkeep
+/ai_chat.py
+/Archive
+/Batch Input Files/*
+!/Batch Input Files/.gitkeep
+/Batch Response Files/*
+!/Batch Response Files/.gitkeep
+/documentation/*
+!/documentation/.gitkeep
+.Rproj.user
+.RData
+.Rhistory
+r_analysis.Rproj
+r_analysis/data/*
+!r_analysis/data/.gitkeep
+r_analysis/figures/*
+!r_analysis/figures/.gitkeep
+r_analysis/logs/*
+!r_analysis/logs/.gitkeep
+r_analysis/models/*
+!r_analysis/models/.gitkeep
+r_analysis/tables/*
+!r_analysis/tables/.gitkeep
+.DS_Store
