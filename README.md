@@ -27,6 +27,7 @@ The code is presented to make the methodology **transparent** and the pipeline d
 
 | Path | Purpose | Reviewer Notes |
 | --- | --- | --- |
+| `ANONYMIZED_README.md` | An anonymized version of the readme file for the public repo | Will be published after manuscript publication |
 | `Batch Input Files/` | Structure used for JSONL payloads to LLM APIs | Shows expected payload layout; not populated here |
 | `Batch Response Files/` | Structure for returned batch outputs | Not populated here |
 | `Data/` | Placeholder for source datasets | Not included; code references document expected schema/paths |
